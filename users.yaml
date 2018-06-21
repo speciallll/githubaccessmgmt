@@ -1,7 +1,3 @@
 users:
-  - githubuser: user1
-    aduser: aduser1
-  - githubuser: user2
-    aduser: aduser2
   - githubuser: mindystevenson
     aduser: test

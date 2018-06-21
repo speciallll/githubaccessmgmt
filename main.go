@@ -116,12 +116,18 @@ func main() {
 		for _, user := range team.Users {
 			fmt.Printf("User: %s\n", user)
 			for _, userInYaml := range u.Users {
-				// TODO check if membership already exists first
 				if user == userInYaml.GithubUser {
-					_, _, err := client.Organizations.AddTeamMembership(ctx, team.Id, user, nil)
-
+					isMember, _, err := client.Organizations.IsTeamMember(ctx, team.Id, user)
 					if err != nil {
 						fmt.Printf("error: %v", err)
+					}
+					if !isMember {
+						_, _, err := client.Organizations.AddTeamMembership(ctx, team.Id, user, nil)
+						fmt.Printf("after AddTeamMembership for %s", userInYaml.GithubUser)
+
+						if err != nil {
+							fmt.Printf("error: %v", err)
+						}
 					}
 					break
 				}
