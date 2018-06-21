@@ -20,6 +20,7 @@ type Users struct {
 type Teams struct {
         Teams []struct {
                 Name   string   `yaml:"name"`
+                Id     int64	`yaml:"id"`
                 Users  []string `yaml:",flow"`
         }
 }
@@ -35,13 +36,17 @@ type Repos struct {
 
 func main() {
         
-        processUsers()
-        processTeams()
-        processRepos()
+		//setup github client
+        ctx := context.Background()
+			
+		ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: "..."},
+		) //personal access token for now
 
-}
+		tc := oauth2.NewClient(ctx, ts)
 
-func processUsers() {
+		client := github.NewClient(tc)
+
 
 		//process users.yaml
         u := Users{}
@@ -59,22 +64,9 @@ func processUsers() {
         
         for _, user := range u.Users {
 	        fmt.Printf("GitHub UserName: %s\n", user.GithubUser)
-	       
-    	}
+	        // TODO maybe add to default splunk team that gets read access to all repos?
+    	} 
 
-    	// TODO may need to add user to github org ?  
-    	// https://developer.github.com/v3/orgs/members/#add-or-update-organization-membership 
-    	// PUT /orgs/:org/memberships/:username
-
-    	// it actually looks like adding to a team will send invite to org
-    	// https://developer.github.com/v3/teams/members/#add-or-update-team-membership
-    	// PUT /teams/:team_id/memberships/:username
-
-    	// TODO maybe add to default splunk team that gets read access to all repos? 
-
-}
-
-func processTeams() {
 
 		//process teams.yaml
         t := Teams{}
@@ -85,58 +77,61 @@ func processTeams() {
 	        log.Printf("teamsYamlFile.Get err   #%v ", errTest)
 	    }
     
-        err := yaml.Unmarshal(teamsYamlFile, &t)
+        err = yaml.Unmarshal(teamsYamlFile, &t)
         if err != nil {
                 log.Fatalf("error: %v", err)
         }
-        
-        for _, team := range t.Teams {
+
+	    opts := &github.ListOptions{}
+        teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", opts)
+	    if err != nil {
+	        fmt.Println(err)
+	    } 
+	    for _, team := range t.Teams {
 	        fmt.Printf("Name: %s\n", team.Name)
+	        teamExists := false
 
-	        // create a new team 
-			newteam := &github.NewTeam{
-				Name:    team.Name,
-			}
-			//client := github.NewClient(nil)
-			ctx := context.Background()
+		    for _, t1 := range teams {
+		        if t1.GetName() == team.Name {
+		            fmt.Printf("Team %q has ID %d\n", team.Name, t1.GetID())
+		            team.Id = t1.GetID()
+		            teamExists = true
+		            break
+		        }
+		    }
 			
-			// personal access token for now
-			ts := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: "..."},
-			)
+			if (!teamExists){
+		        // create a new team 
+				newteam := &github.NewTeam{
+					Name:    team.Name,
+				}
+				
+			    // TODO update to take org as parameter
+				newteamid, _, err := client.Organizations.CreateTeam(ctx, "speciallll", newteam)
+				team.Id = newteamid.GetID()
 
-			tc := oauth2.NewClient(ctx, ts)
-
-			client := github.NewClient(tc)
-
-		    // TODO update to take org as parameter
-			newteamid, _, err := client.Organizations.CreateTeam(ctx, "speciallll", newteam)
-
-	        // print error (ie. team already exists)
-	        // TODO need to get team if already exists 
-	        if err != nil {
-	                fmt.Printf("error: %v", err)
-	        }
-        
-    	
-	        for _, user := range team.Users {
-	        	fmt.Printf("User: %s\n", user)
-	        	// https://godoc.org/github.com/google/go-github/github#OrganizationsService
-	        	// func (s *OrganizationsService) AddTeamMembership(ctx context.Context, team int64, user string, opt *OrganizationAddTeamMembershipOptions) (*Membership, *Response, error)
-	        	_, _, err := client.Organizations.AddTeamMembership(ctx, newteamid.GetID(), user, nil)
-
-		        // print error (ie. team already exists)
 		        if err != nil {
 		                fmt.Printf("error: %v", err)
 		        }
+        	}
+    	
+	        for _, user := range team.Users {
+	        	fmt.Printf("User: %s\n", user)
+	        	for _, userInYaml := range u.Users {
+			        // TODO check if membership already exists first
+			        if (user==userInYaml.GithubUser){
+		        		_, _, err := client.Organizations.AddTeamMembership(ctx, team.Id, user, nil)
+
+				        if err != nil {
+				                fmt.Printf("error: %v", err)
+				        }
+				        break
+			    	}
+			    }
 	        }
 
 	    }
     	
-
-}
-
-func processRepos() {
 		//process repos.yaml
     	r := Repos{}
 
@@ -146,14 +141,15 @@ func processRepos() {
 	        log.Printf("reposYamlFile.Get err   #%v ", errTest)
 	    }
     
-        err := yaml.Unmarshal(reposYamlFile, &r)
+        err = yaml.Unmarshal(reposYamlFile, &r)
         if err != nil {
                 log.Fatalf("error: %v", err)
         }
 
         for _, repo := range r.Repos {
 	        fmt.Printf("Repo Name: %s\n", repo.RepoName)
-	        // TODO need to error if repo doesn't exist?  or should it create repo?
+	        // TODO need to error if repo doesn't exist on github?  
+	        // or should it create repo?  prob not for now
 	        for _, adminTeams := range repo.Admin {
 	        	fmt.Printf("Admin Teams: %s\n", adminTeams)
 	        	// TODO need to add team as admin to repo

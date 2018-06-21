@@ -3,3 +3,5 @@ users:
     aduser: aduser1
   - githubuser: user2
     aduser: aduser2
+  - githubuser: mindystevenson
+    aduser: test

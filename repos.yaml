@@ -3,8 +3,9 @@ repos:
   admin:
     - k2
   read: 
-    - all
-  write: [test]
+    - allOrgUsers
+  write:
+    - testteam
 - repoName: bcs
   admin:
     - majorkey

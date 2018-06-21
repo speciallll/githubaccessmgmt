@@ -1,8 +1,11 @@
 teams:
-- name: team5
+- name: team1
+  users:
+    - itay
+    - mindystevenson
+- name: team2
   users:
     - mindystevenson
-    - itay
-- name: team6
+- name: team3
   users:
     - mindystevenson
