@@ -1,0 +1,13 @@
+repos: 
+- repoName: kvstore
+  admin:
+    - k2
+  read: 
+    - all
+  write: [test]
+- repoName: bcs
+  admin:
+    - majorkey
+    - test2
+  read: 
+  write: 
