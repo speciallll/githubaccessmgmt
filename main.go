@@ -47,16 +47,19 @@ func main() {
 
 	client := github.NewClient(tc)
 
+	// TODO The GitHub client gives you info about the current rate limit
+	// let’s make sure we print that, at least to understand.
+
 	//process users.yaml
 	u := Users{}
 
-	usersYamlFile, errTest := ioutil.ReadFile("users.yaml")
+	usersYamlFile, err := ioutil.ReadFile("users.yaml")
 
-	if errTest != nil {
-		fmt.Printf("usersYamlFile.Get err   #%v ", errTest)
+	if err != nil {
+		fmt.Printf("usersYamlFile.Get err   #%v ", err)
 	}
 
-	err := yaml.Unmarshal(usersYamlFile, &u)
+	err = yaml.Unmarshal(usersYamlFile, &u)
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
@@ -70,10 +73,10 @@ func main() {
 	//process teams.yaml
 	t := Teams{}
 
-	teamsYamlFile, errTest := ioutil.ReadFile("teams.yaml")
+	teamsYamlFile, err := ioutil.ReadFile("teams.yaml")
 
-	if errTest != nil {
-		fmt.Printf("teamsYamlFile.Get err   #%v ", errTest)
+	if err != nil {
+		fmt.Printf("teamsYamlFile.Get err   #%v ", err)
 	}
 
 	err = yaml.Unmarshal(teamsYamlFile, &t)
@@ -82,7 +85,7 @@ func main() {
 	}
 
 	opts := &github.ListOptions{}
-	teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", opts)
+	teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", opts) // TODO update to take org as parameter
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -141,10 +144,10 @@ func main() {
 	//process repos.yaml
 	r := Repos{}
 
-	reposYamlFile, errTest := ioutil.ReadFile("repos.yaml")
+	reposYamlFile, err := ioutil.ReadFile("repos.yaml")
 
-	if errTest != nil {
-		fmt.Printf("reposYamlFile.Get err   #%v ", errTest)
+	if err != nil {
+		fmt.Printf("reposYamlFile.Get err   #%v ", err)
 	}
 
 	err = yaml.Unmarshal(reposYamlFile, &r)
