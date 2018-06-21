@@ -53,7 +53,7 @@ func main() {
 	usersYamlFile, errTest := ioutil.ReadFile("users.yaml")
 
 	if errTest != nil {
-		log.Printf("usersYamlFile.Get err   #%v ", errTest)
+		fmt.Printf("usersYamlFile.Get err   #%v ", errTest)
 	}
 
 	err := yaml.Unmarshal(usersYamlFile, &u)
@@ -61,10 +61,11 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	for _, user := range u.Users {
+	// TODO maybe add to default splunk team that gets read access to all repos?
+	/*for _, user := range u.Users {
 		fmt.Printf("GitHub UserName: %s\n", user.GithubUser)
-		// TODO maybe add to default splunk team that gets read access to all repos?
-	}
+
+	}*/
 
 	//process teams.yaml
 	t := Teams{}
@@ -72,7 +73,7 @@ func main() {
 	teamsYamlFile, errTest := ioutil.ReadFile("teams.yaml")
 
 	if errTest != nil {
-		log.Printf("teamsYamlFile.Get err   #%v ", errTest)
+		fmt.Printf("teamsYamlFile.Get err   #%v ", errTest)
 	}
 
 	err = yaml.Unmarshal(teamsYamlFile, &t)
@@ -86,12 +87,10 @@ func main() {
 		fmt.Println(err)
 	}
 	for _, team := range t.Teams {
-		fmt.Printf("Name: %s\n", team.Name)
 		teamExists := false
 
 		for _, t1 := range teams {
 			if t1.GetName() == team.Name {
-				fmt.Printf("Team %q has ID %d\n", team.Name, t1.GetID())
 				team.Id = t1.GetID()
 				teamExists = true
 				break
@@ -114,7 +113,7 @@ func main() {
 		}
 
 		for _, user := range team.Users {
-			fmt.Printf("User: %s\n", user)
+			userFoundInYaml := false
 			for _, userInYaml := range u.Users {
 				if user == userInYaml.GithubUser {
 					isMember, _, err := client.Organizations.IsTeamMember(ctx, team.Id, user)
@@ -123,14 +122,17 @@ func main() {
 					}
 					if !isMember {
 						_, _, err := client.Organizations.AddTeamMembership(ctx, team.Id, user, nil)
-						fmt.Printf("after AddTeamMembership for %s", userInYaml.GithubUser)
 
 						if err != nil {
 							fmt.Printf("error: %v", err)
 						}
 					}
+					userFoundInYaml = true
 					break
 				}
+			}
+			if !userFoundInYaml {
+				fmt.Printf("ERROR: %s in teams.yaml, but NOT in users.yaml\n", user)
 			}
 		}
 
@@ -142,7 +144,7 @@ func main() {
 	reposYamlFile, errTest := ioutil.ReadFile("repos.yaml")
 
 	if errTest != nil {
-		log.Printf("reposYamlFile.Get err   #%v ", errTest)
+		fmt.Printf("reposYamlFile.Get err   #%v ", errTest)
 	}
 
 	err = yaml.Unmarshal(reposYamlFile, &r)
