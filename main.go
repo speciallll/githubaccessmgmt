@@ -94,16 +94,16 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	teams, _, err := client.Organizations.ListTeams(ctx, *orgPtr, nil)
+	githubTeams, _, err := client.Organizations.ListTeams(ctx, *orgPtr, nil)
 	if err != nil {
 		fmt.Println(err)
 	}
-	for _, team := range t.Teams {
+	for _, teamFromTeamYaml := range t.Teams {
 		teamExists := false
 
-		for _, t1 := range teams {
-			if t1.GetName() == team.Name {
-				team.Id = t1.GetID()
+		for _, githubTeam := range githubTeams {
+			if githubTeam.GetName() == teamFromTeamYaml.Name {
+				teamFromTeamYaml.Id = githubTeam.GetID()
 				teamExists = true
 				break
 			}
@@ -111,27 +111,27 @@ func main() {
 
 		if !teamExists {
 			// create a new team
-			newteam := &github.NewTeam{
-				Name: team.Name,
+			newTeam := &github.NewTeam{
+				Name: teamFromTeamYaml.Name,
 			}
 
-			newteamid, _, err := client.Organizations.CreateTeam(ctx, *orgPtr, newteam)
+			newTeamCreated, _, err := client.Organizations.CreateTeam(ctx, *orgPtr, newTeam)
 			if err != nil {
 				fmt.Printf("error: %v", err)
 			}
-			team.Id = newteamid.GetID()
+			teamFromTeamYaml.Id = newTeamCreated.GetID()
 		}
 
-		for _, user := range team.Users {
+		for _, userFromTeamYaml := range teamFromTeamYaml.Users {
 			userFoundInYaml := false
-			for _, userInYaml := range u.Users {
-				if user == userInYaml.GithubUser {
-					isMember, _, err := client.Organizations.IsTeamMember(ctx, team.Id, user)
+			for _, userFromUserYaml := range u.Users {
+				if userFromTeamYaml == userFromUserYaml.GithubUser {
+					isMember, _, err := client.Organizations.IsTeamMember(ctx, teamFromTeamYaml.Id, userFromTeamYaml)
 					if err != nil {
 						fmt.Printf("error: %v", err)
 					}
 					if !isMember {
-						_, _, err := client.Organizations.AddTeamMembership(ctx, team.Id, user, nil)
+						_, _, err := client.Organizations.AddTeamMembership(ctx, teamFromTeamYaml.Id, userFromTeamYaml, nil)
 
 						if err != nil {
 							fmt.Printf("error: %v", err)
@@ -142,7 +142,7 @@ func main() {
 				}
 			}
 			if !userFoundInYaml {
-				fmt.Printf("ERROR: %s in teams.yaml, but NOT in users.yaml\n", user)
+				fmt.Printf("ERROR: %s in teams.yaml, but NOT in users.yaml\n", userFromTeamYaml)
 			}
 		}
 
@@ -162,16 +162,16 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	repos, _, err := client.Repositories.ListByOrg(ctx, *orgPtr, nil)
+	githubRepos, _, err := client.Repositories.ListByOrg(ctx, *orgPtr, nil)
 
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	for _, repo := range r.Repos {
+	for _, repoFromYaml := range r.Repos {
 		repoExists := false
-		for _, r1 := range repos {
-			if r1.GetName() == repo.RepoName {
+		for _, githubRepo := range githubRepos {
+			if githubRepo.GetName() == repoFromYaml.RepoName {
 				//team.Id = t1.GetID()
 				repoExists = true
 				break
@@ -181,7 +181,7 @@ func main() {
 
 		if repoExists {
 
-			repoteams, _, err := client.Repositories.ListTeams(ctx, *orgPtr, repo.RepoName, nil)
+			githubRepoTeams, _, err := client.Repositories.ListTeams(ctx, *orgPtr, repoFromYaml.RepoName, nil)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -189,26 +189,26 @@ func main() {
 			opts := &github.OrganizationAddTeamRepoOptions{}
 			opts.Permission = "pull"
 
-			for _, readTeam := range repo.Read {
+			for _, readTeamFromYaml := range repoFromYaml.Read {
 				// TODO - add check if team exists in teams.yaml first?
 
-				for _, repoteam := range repoteams {
-					teamHasRepoAccess := false
-					if repoteam.GetName() == readTeam {
-						teamHasRepoAccess = true
+				for _, githubRepoTeam := range githubRepoTeams {
+					teamHasGithubRepoAccess := false
+					if githubRepoTeam.GetName() == readTeamFromYaml {
+						teamHasGithubRepoAccess = true
 
-						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
+						if githubRepoTeam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, githubRepoTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
 						}
 					}
-					if !teamHasRepoAccess {
-						for _, t2 := range teams {
+					if !teamHasGithubRepoAccess {
+						for _, githubTeam := range githubTeams {
 
-							if t2.GetName() == readTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
+							if githubTeam.GetName() == readTeamFromYaml {
+								_, err = client.Organizations.AddTeamRepo(ctx, githubTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -221,26 +221,26 @@ func main() {
 			}
 
 			opts.Permission = "push"
-			for _, writeTeam := range repo.Write {
+			for _, writeTeamFromYaml := range repoFromYaml.Write {
 				// TODO - add check if team exists in teams.yaml first?
 
-				for _, repoteam := range repoteams {
-					teamHasRepoAccess := false
-					if repoteam.GetName() == writeTeam {
-						teamHasRepoAccess = true
+				for _, githubRepoTeam := range githubRepoTeams {
+					teamHasGithubRepoAccess := false
+					if githubRepoTeam.GetName() == writeTeamFromYaml {
+						teamHasGithubRepoAccess = true
 
-						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
+						if githubRepoTeam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, githubRepoTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
 						}
 					}
-					if !teamHasRepoAccess {
-						for _, t2 := range teams {
+					if !teamHasGithubRepoAccess {
+						for _, githubTeam := range githubTeams {
 
-							if t2.GetName() == writeTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
+							if githubTeam.GetName() == writeTeamFromYaml {
+								_, err = client.Organizations.AddTeamRepo(ctx, githubTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -253,26 +253,26 @@ func main() {
 			}
 
 			opts.Permission = "admin"
-			for _, adminTeam := range repo.Admin {
+			for _, adminTeamFromYaml := range repoFromYaml.Admin {
 				// TODO - add check if team exists in teams.yaml first?
 
-				for _, repoteam := range repoteams {
-					teamHasRepoAccess := false
-					if repoteam.GetName() == adminTeam {
-						teamHasRepoAccess = true
+				for _, githubRepoTeam := range githubRepoTeams {
+					teamHasGithubRepoAccess := false
+					if githubRepoTeam.GetName() == adminTeamFromYaml {
+						teamHasGithubRepoAccess = true
 
-						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
+						if githubRepoTeam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, githubRepoTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
 						}
 					}
-					if !teamHasRepoAccess {
-						for _, t2 := range teams {
+					if !teamHasGithubRepoAccess {
+						for _, githubTeam := range githubTeams {
 
-							if t2.GetName() == adminTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
+							if githubTeam.GetName() == adminTeamFromYaml {
+								_, err = client.Organizations.AddTeamRepo(ctx, githubTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -283,7 +283,7 @@ func main() {
 				}
 			}
 		} else {
-			fmt.Printf("ERROR: %s in repos.yaml, but DOES NOT exist on GitHub in %s org\n", repo.RepoName, *orgPtr)
+			fmt.Printf("ERROR: %s in repos.yaml, but DOES NOT exist on GitHub in %s org\n", repoFromYaml.RepoName, *orgPtr)
 		}
 	}
 
