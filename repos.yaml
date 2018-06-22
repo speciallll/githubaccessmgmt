@@ -1,11 +1,11 @@
 repos: 
-- repoName: kvstore
+- repoName: temp
   admin:
-    - k2
-  read: 
-    - allOrgUsers
+    - team3
+  read:
+    - team1
   write:
-    - testteam
+    - team2
 - repoName: bcs
   admin:
     - majorkey

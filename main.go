@@ -34,6 +34,9 @@ type Repos struct {
 	}
 }
 
+// STILL NEED TO HANDLE
+// if users are removed from teams
+
 func main() {
 
 	//setup github client
@@ -66,7 +69,6 @@ func main() {
 
 	// TODO maybe add to default splunk team that gets read access to all repos?
 	/*for _, user := range u.Users {
-		fmt.Printf("GitHub UserName: %s\n", user.GithubUser)
 
 	}*/
 
@@ -84,8 +86,7 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	opts := &github.ListOptions{}
-	teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", opts) // TODO update to take org as parameter
+	teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", nil) // TODO update to take org as parameter
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -108,11 +109,10 @@ func main() {
 
 			// TODO update to take org as parameter
 			newteamid, _, err := client.Organizations.CreateTeam(ctx, "speciallll", newteam)
-			team.Id = newteamid.GetID()
-
 			if err != nil {
 				fmt.Printf("error: %v", err)
 			}
+			team.Id = newteamid.GetID()
 		}
 
 		for _, user := range team.Users {
@@ -155,21 +155,129 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
+	repos, _, err := client.Repositories.ListByOrg(ctx, "speciallll", nil) // TODO update to take org as parameter
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	for _, repo := range r.Repos {
-		fmt.Printf("Repo Name: %s\n", repo.RepoName)
-		// TODO need to error if repo doesn't exist on github?
-		// or should it create repo?  prob not for now
-		for _, adminTeams := range repo.Admin {
-			fmt.Printf("Admin Teams: %s\n", adminTeams)
-			// TODO need to add team as admin to repo
+		repoExists := false
+		for _, r1 := range repos {
+			if r1.GetName() == repo.RepoName {
+				//team.Id = t1.GetID()
+				repoExists = true
+				break
+			}
+
 		}
-		for _, readTeams := range repo.Read {
-			fmt.Printf("Read Teams: %s\n", readTeams)
-			// TODO need to add team as read to repo
-		}
-		for _, writeTeams := range repo.Write {
-			fmt.Printf("Write Teams: %s\n", writeTeams)
-			// TODO need to add team as write to repo
+
+		if repoExists {
+
+			repoteams, _, err := client.Repositories.ListTeams(ctx, "speciallll", repo.RepoName, nil) // TODO update to take org as parameter
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			opts := &github.OrganizationAddTeamRepoOptions{}
+			opts.Permission = "pull"
+
+			for _, readTeam := range repo.Read {
+				// TODO - add check if team exists in teams.yaml first?
+
+				for _, repoteam := range repoteams {
+					teamHasRepoAccess := false
+					if repoteam.GetName() == readTeam {
+						teamHasRepoAccess = true
+
+						if repoteam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							if err != nil {
+								fmt.Println(err)
+							}
+						}
+					}
+					if !teamHasRepoAccess {
+						for _, t2 := range teams {
+
+							if t2.GetName() == readTeam {
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								if err != nil {
+									fmt.Println(err)
+								}
+								break
+							}
+						}
+					}
+				}
+
+			}
+
+			opts.Permission = "push"
+			for _, writeTeam := range repo.Write {
+				// TODO - add check if team exists in teams.yaml first?
+
+				for _, repoteam := range repoteams {
+					teamHasRepoAccess := false
+					if repoteam.GetName() == writeTeam {
+						teamHasRepoAccess = true
+
+						if repoteam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							if err != nil {
+								fmt.Println(err)
+							}
+						}
+					}
+					if !teamHasRepoAccess {
+						for _, t2 := range teams {
+
+							if t2.GetName() == writeTeam {
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								if err != nil {
+									fmt.Println(err)
+								}
+								break
+							}
+						}
+					}
+				}
+
+			}
+
+			opts.Permission = "admin"
+			for _, adminTeam := range repo.Admin {
+				// TODO - add check if team exists in teams.yaml first?
+
+				for _, repoteam := range repoteams {
+					teamHasRepoAccess := false
+					if repoteam.GetName() == adminTeam {
+						teamHasRepoAccess = true
+
+						if repoteam.GetPermission() != opts.Permission {
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							if err != nil {
+								fmt.Println(err)
+							}
+						}
+					}
+					if !teamHasRepoAccess {
+						for _, t2 := range teams {
+
+							if t2.GetName() == adminTeam {
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								if err != nil {
+									fmt.Println(err)
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+		} else {
+			// TODO update to take org as parameter
+			fmt.Printf("ERROR: %s in repos.yaml, but DOES NOT exist on GitHub in %s org\n", repo.RepoName, "speciallll")
 		}
 	}
 
