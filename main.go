@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
@@ -34,10 +35,15 @@ type Repos struct {
 	}
 }
 
-// STILL NEED TO HANDLE
+// TODO STILL NEED TO HANDLE
 // if users are removed from teams
+// if teams are removed from repos
 
 func main() {
+
+	orgPtr := flag.String("org", "splunk", "github organization")
+	flag.Parse()
+	fmt.Printf("org: %s\n", *orgPtr)
 
 	//setup github client
 	ctx := context.Background()
@@ -50,8 +56,10 @@ func main() {
 
 	client := github.NewClient(tc)
 
-	// TODO The GitHub client gives you info about the current rate limit
-	// let’s make sure we print that, at least to understand.
+	rateLimits, _, err := client.RateLimits(ctx)
+
+	fmt.Printf("Rate Limit:  %d\n", rateLimits.GetCore().Limit)
+	fmt.Printf("Remaining Rate Limit:  %d\n", rateLimits.GetCore().Remaining)
 
 	//process users.yaml
 	u := Users{}
@@ -86,7 +94,7 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	teams, _, err := client.Organizations.ListTeams(ctx, "speciallll", nil) // TODO update to take org as parameter
+	teams, _, err := client.Organizations.ListTeams(ctx, *orgPtr, nil)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -107,8 +115,7 @@ func main() {
 				Name: team.Name,
 			}
 
-			// TODO update to take org as parameter
-			newteamid, _, err := client.Organizations.CreateTeam(ctx, "speciallll", newteam)
+			newteamid, _, err := client.Organizations.CreateTeam(ctx, *orgPtr, newteam)
 			if err != nil {
 				fmt.Printf("error: %v", err)
 			}
@@ -155,7 +162,7 @@ func main() {
 		log.Fatalf("error: %v", err)
 	}
 
-	repos, _, err := client.Repositories.ListByOrg(ctx, "speciallll", nil) // TODO update to take org as parameter
+	repos, _, err := client.Repositories.ListByOrg(ctx, *orgPtr, nil)
 
 	if err != nil {
 		fmt.Println(err)
@@ -174,7 +181,7 @@ func main() {
 
 		if repoExists {
 
-			repoteams, _, err := client.Repositories.ListTeams(ctx, "speciallll", repo.RepoName, nil) // TODO update to take org as parameter
+			repoteams, _, err := client.Repositories.ListTeams(ctx, *orgPtr, repo.RepoName, nil)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -191,7 +198,7 @@ func main() {
 						teamHasRepoAccess = true
 
 						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
@@ -201,7 +208,7 @@ func main() {
 						for _, t2 := range teams {
 
 							if t2.GetName() == readTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -223,7 +230,7 @@ func main() {
 						teamHasRepoAccess = true
 
 						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
@@ -233,7 +240,7 @@ func main() {
 						for _, t2 := range teams {
 
 							if t2.GetName() == writeTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -255,7 +262,7 @@ func main() {
 						teamHasRepoAccess = true
 
 						if repoteam.GetPermission() != opts.Permission {
-							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+							_, err = client.Organizations.AddTeamRepo(ctx, repoteam.GetID(), *orgPtr, repo.RepoName, opts)
 							if err != nil {
 								fmt.Println(err)
 							}
@@ -265,7 +272,7 @@ func main() {
 						for _, t2 := range teams {
 
 							if t2.GetName() == adminTeam {
-								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), "speciallll", repo.RepoName, opts) // TODO update to take org as parameter
+								_, err = client.Organizations.AddTeamRepo(ctx, t2.GetID(), *orgPtr, repo.RepoName, opts)
 								if err != nil {
 									fmt.Println(err)
 								}
@@ -276,8 +283,7 @@ func main() {
 				}
 			}
 		} else {
-			// TODO update to take org as parameter
-			fmt.Printf("ERROR: %s in repos.yaml, but DOES NOT exist on GitHub in %s org\n", repo.RepoName, "speciallll")
+			fmt.Printf("ERROR: %s in repos.yaml, but DOES NOT exist on GitHub in %s org\n", repo.RepoName, *orgPtr)
 		}
 	}
 
