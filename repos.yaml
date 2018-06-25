@@ -1,14 +1,15 @@
-repos: 
-- repoName: temp
+temp:
   admin:
     - team3
   read:
     - team1
   write:
     - team2
-- repoName: bcs
+bcs:
   admin:
     - majorkey
     - test2
-  read: 
-  write: 
+  read:
+    - test1
+  write:
+    - test3

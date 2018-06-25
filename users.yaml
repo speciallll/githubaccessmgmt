@@ -1,3 +1,4 @@
-users:
-  - githubuser: mindystevenson
-    aduser: test
+mindystevenson:
+  aduser: test
+testuser2:
+  aduser: test2
