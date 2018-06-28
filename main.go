@@ -9,7 +9,6 @@ import (
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
-	"strconv"
 )
 
 type User struct {
@@ -37,18 +36,194 @@ type RepoMap struct {
 	Teams map[string]*TeamMap
 }
 
-func main() {
-
-	yamlTeams, yamlRepos := getDataFromYaml()
-	githubTeams, githubRepos := getDataFromGithub()
-
-	operations := TeamDiff(yamlTeams, githubTeams)
-	operations = append(operations, RepoDiff(yamlRepos, githubRepos)...)
-
-	// Need to add execute (and dry run)
+type Operation interface {
+	Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool)
 }
 
-func getDataFromYaml() (map[string]*TeamMap, map[string]*RepoMap) {
+type AddTeamMembershipOperation struct {
+	teamId   int64
+	teamName string
+	user     string
+}
+
+type RemoveTeamMembershipOperation struct {
+	teamId   int64
+	teamName string
+	user     string
+}
+
+type CreateTeamOperation struct {
+	teamName string
+	users    []AddTeamMembershipOperation
+}
+
+type UpdateTeamRepoPermissionOperation struct {
+	teamId     int64
+	teamName   string
+	repoName   string
+	permission string
+}
+
+type AddTeamRepoOperation struct {
+	teamId     int64
+	teamName   string
+	repoName   string
+	permission string
+}
+
+type RemoveTeamRepoOperation struct {
+	teamId   int64
+	teamName string
+	repoName string
+}
+
+type RemoveOrgMemberOperation struct {
+	userName string
+}
+
+func (op AddTeamMembershipOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Add user %s to team %s\n", op.user, op.teamName)
+	} else {
+		_, _, err := client.Organizations.AddTeamMembership(ctx, op.teamId, op.user, nil)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+	}
+}
+
+func (op RemoveTeamMembershipOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Remove user %s from team %s\n", op.user, op.teamName)
+	} else {
+		_, err := client.Organizations.RemoveTeamMembership(ctx, op.teamId, op.user)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+	}
+}
+
+func (op CreateTeamOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Create new team %s\n", op.teamName)
+		for _, u := range op.users {
+			u.Execute(ctx, client, orgPtr, dryrun)
+		}
+	} else {
+		// create a new team
+		newTeam := &github.NewTeam{
+			Name: op.teamName,
+		}
+		newGithubTeam, _, err := client.Organizations.CreateTeam(ctx, *orgPtr, newTeam)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+		}
+		teamId := newGithubTeam.GetID()
+		for _, u := range op.users {
+			u.teamId = teamId
+			u.Execute(ctx, client, orgPtr, dryrun)
+		}
+	}
+}
+
+func (op UpdateTeamRepoPermissionOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Update team %s to have permission %s for repo %s\n", op.teamName, op.permission, op.repoName)
+	} else {
+		// update team to repo permission
+		opts := &github.OrganizationAddTeamRepoOptions{}
+		opts.Permission = op.permission
+
+		_, err := client.Organizations.AddTeamRepo(ctx, op.teamId, *orgPtr, op.repoName, opts)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func (op AddTeamRepoOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Add team %s to have permission %s for repo %s\n", op.teamName, op.permission, op.repoName)
+	} else {
+		// add team to repo
+		opts := &github.OrganizationAddTeamRepoOptions{}
+		opts.Permission = op.permission
+
+		_, err := client.Organizations.AddTeamRepo(ctx, op.teamId, *orgPtr, op.repoName, opts)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func (op RemoveTeamRepoOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Remove team %s from repo %s\n", op.teamName, op.repoName)
+	} else {
+		// remove team from repo
+		_, err := client.Organizations.RemoveTeamRepo(ctx, op.teamId, *orgPtr, op.repoName)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func (op RemoveOrgMemberOperation) Execute(ctx context.Context, client *github.Client, orgPtr *string, dryrun bool) {
+	if dryrun {
+		fmt.Printf("Remove user %s from org %s\n", op.userName, *orgPtr)
+	} else {
+		// remove team from repo
+		_, err := client.Organizations.RemoveOrgMembership(ctx, op.userName, *orgPtr)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func main() {
+
+	//params
+	orgPtr := flag.String("org", "splunk", "github organization")
+	tokenPtr := flag.String("token", "", "github token")
+	dryRunPtr := flag.Bool("dryrun", true, "if dryrun true, then do not update github")
+	flag.Parse()
+
+	//setup github client
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: *tokenPtr},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+	client := github.NewClient(tc)
+
+	//rate limits
+	rateLimits, _, err := client.RateLimits(ctx)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Printf("Rate Limit:  %d\n", rateLimits.GetCore().Limit)
+	fmt.Printf("Remaining Rate Limit Start:  %d\n", rateLimits.GetCore().Remaining)
+
+	yamlUsers, yamlTeams, yamlRepos := getDataFromYaml()
+	githubUsers, githubTeams, githubRepos := getDataFromGithub(ctx, client, orgPtr)
+
+	ops := UserDiff(yamlUsers, githubUsers)
+	ops = append(ops, TeamDiff(yamlTeams, githubTeams)...)
+	ops = append(ops, RepoDiff(yamlRepos, githubRepos)...)
+
+	for _, op := range ops {
+		op.Execute(ctx, client, orgPtr, *dryRunPtr)
+	}
+
+	rateLimits, _, err = client.RateLimits(ctx)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Printf("Remaining Rate Limit End:  %d\n", rateLimits.GetCore().Remaining)
+
+}
+
+func getDataFromYaml() (map[string]*User, map[string]*TeamMap, map[string]*RepoMap) {
 
 	// get data from users.yaml
 	users := make(map[string]*User)
@@ -136,36 +311,34 @@ func getDataFromYaml() (map[string]*TeamMap, map[string]*RepoMap) {
 		reposMap[repoName] = &r
 	}
 
-	return teamsMap, reposMap
+	return users, teamsMap, reposMap
 
 }
 
-func getDataFromGithub() (map[string]*TeamMap, map[string]*RepoMap) {
+func getDataFromGithub(ctx context.Context, client *github.Client, orgPtr *string) (map[string]*User, map[string]*TeamMap, map[string]*RepoMap) {
 
-	//get org parameter (defaults to splunk if not specified)
-	orgPtr := flag.String("org", "splunk", "github organization")
-	tokenPtr := flag.String("token", "", "github token")
-	flag.Parse()
+	users := make(map[string]*User)
+	opt := &github.ListMembersOptions{}
+	for {
+		githubUsers, resp, err := client.Organizations.ListMembers(ctx, *orgPtr, opt)
+		if err != nil {
+			fmt.Println(err)
+		}
+		u := User{}
+		for _, githubUser := range githubUsers {
+			users[githubUser.GetLogin()] = &u
+		}
 
-	//setup github client
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: *tokenPtr},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-	client := github.NewClient(tc)
-
-	//rate limits
-	rateLimits, _, err := client.RateLimits(ctx)
-	if err != nil {
-		fmt.Println(err)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
 	}
-	fmt.Printf("Rate Limit:  %d\n", rateLimits.GetCore().Limit)
-	fmt.Printf("Remaining Rate Limit:  %d\n", rateLimits.GetCore().Remaining)
 
 	teams := make(map[string]*TeamMap)
 	opts := &github.ListOptions{}
 	for {
+
 		githubTeams, resp, err := client.Organizations.ListTeams(ctx, *orgPtr, opts)
 		if err != nil {
 			fmt.Println(err)
@@ -174,6 +347,7 @@ func getDataFromGithub() (map[string]*TeamMap, map[string]*RepoMap) {
 		for _, githubTeam := range githubTeams {
 			t := TeamMap{}
 			t.Id = githubTeam.GetID()
+			fmt.Printf("Get from GitHub Team ID %d\n", githubTeam.GetID())
 			usersMap := make(map[string]*User)
 			u := User{}
 
@@ -225,6 +399,8 @@ func getDataFromGithub() (map[string]*TeamMap, map[string]*RepoMap) {
 
 				for _, githubRepoTeam := range githubRepoTeams {
 					t := TeamMap{}
+					t.Id = githubRepoTeam.GetID()
+					fmt.Printf("Get from GitHub Team Repo ID %d\n", githubRepoTeam.GetID())
 					if githubRepoTeam.GetPermission() == "pull" {
 						t.Permission = "pull"
 					} else if githubRepoTeam.GetPermission() == "push" {
@@ -251,102 +427,77 @@ func getDataFromGithub() (map[string]*TeamMap, map[string]*RepoMap) {
 		optsForRepos.Page = respForRepos.NextPage
 	}
 
-	return teams, repos
+	return users, teams, repos
 
 }
 
-func TeamDiff(yamlTeams map[string]*TeamMap, githubTeams map[string]*TeamMap) (operations []string) {
-	//var operations []string
+func UserDiff(yamlUsers map[string]*User, githubUsers map[string]*User) (ops []Operation) {
+	for githubUser, _ := range githubUsers {
+		if _, ok := yamlUsers[githubUser]; !ok {
+			op := RemoveOrgMemberOperation{userName: githubUser}
+			ops = append(ops, op)
+		}
+	}
+
+	return ops
+}
+
+func TeamDiff(yamlTeams map[string]*TeamMap, githubTeams map[string]*TeamMap) (ops []Operation) {
 	for yamlTeamName, yamlTeamValues := range yamlTeams {
 
 		if githubTeam, ok := githubTeams[yamlTeamName]; ok {
 			for yamlUser, _ := range yamlTeamValues.Users {
 				if _, ok := githubTeam.Users[yamlUser]; !ok {
-					operations = append(operations, "AddTeamMembership", strconv.FormatInt(githubTeam.Id, 10), yamlUser)
+					op := AddTeamMembershipOperation{teamId: githubTeam.Id, teamName: yamlTeamName, user: yamlUser}
+					ops = append(ops, op)
 				}
 
 			}
 			for githubUser, _ := range githubTeam.Users {
 				if _, ok := yamlTeamValues.Users[githubUser]; !ok {
-					operations = append(operations, "RemoveTeamMembership", strconv.FormatInt(githubTeam.Id, 10), githubUser)
+					op := RemoveTeamMembershipOperation{teamId: githubTeam.Id, teamName: yamlTeamName, user: githubUser}
+					ops = append(ops, op)
 				}
 			}
 		} else {
-			operations = append(operations, "CreateTeam", yamlTeamName)
+			op := CreateTeamOperation{teamName: yamlTeamName}
+			var childOps []AddTeamMembershipOperation
 			for yamlUser, _ := range yamlTeamValues.Users {
-				operations = append(operations, "AddTeamMembership", strconv.Itoa(-1), yamlUser)
+				op := AddTeamMembershipOperation{teamName: yamlTeamName, user: yamlUser}
+				childOps = append(childOps, op)
 			}
+			op.users = childOps
+			ops = append(ops, op)
 		}
 	}
-	return operations
+	return ops
 }
 
-func RepoDiff(yamlRepos map[string]*RepoMap, githubRepos map[string]*RepoMap) (operations []string) {
-	//var operations []string
+func RepoDiff(yamlRepos map[string]*RepoMap, githubRepos map[string]*RepoMap) (ops []Operation) {
 	for yamlRepoName, yamlRepoValues := range yamlRepos {
 
 		if githubRepo, ok := githubRepos[yamlRepoName]; ok {
 			for yamlTeam, yamlTeamValues := range yamlRepoValues.Teams {
 				if team, ok := githubRepo.Teams[yamlTeam]; ok {
 					if team.Permission != yamlTeamValues.Permission {
-						operations = append(operations, "AddTeamRepo", strconv.FormatInt(team.Id, 10), "orgPtr", yamlRepoName, yamlTeamValues.Permission)
+						op := UpdateTeamRepoPermissionOperation{teamId: team.Id, teamName: yamlTeam, repoName: yamlRepoName, permission: yamlTeamValues.Permission}
+						ops = append(ops, op)
 					}
 				} else {
-					operations = append(operations, "AddTeamRepo", strconv.FormatInt(yamlTeamValues.Id, 10), "orgPtr", yamlRepoName, yamlTeamValues.Permission)
+					op := AddTeamRepoOperation{teamId: yamlTeamValues.Id, teamName: yamlTeam, repoName: yamlRepoName, permission: yamlTeamValues.Permission}
+					ops = append(ops, op)
 				}
 			}
 
 			for teamName, teamValues := range githubRepo.Teams {
 				if _, ok := yamlRepoValues.Teams[teamName]; !ok {
-					operations = append(operations, "RemoveTeamRepo", strconv.FormatInt(teamValues.Id, 10), "orgPtr", yamlRepoName)
+					op := RemoveTeamRepoOperation{teamId: teamValues.Id, teamName: teamName, repoName: yamlRepoName}
+					ops = append(ops, op)
 				}
 			}
 		} else {
 			fmt.Printf("ERROR:  Repo does not exist on Github for %s\n", yamlRepoName)
 		}
 	}
-	return operations
+	return ops
 }
-
-/*
-
-// create a new team
-	newTeam := &github.NewTeam{
-		Name: teamFromTeamYaml.Name,
-	}
-
-	newTeamCreated, _, err := client.Organizations.CreateTeam(ctx, *orgPtr, newTeam)
-	if err != nil {
-		fmt.Printf("error: %v", err)
-	}
-	teamFromTeamYaml.Id = newTeamCreated.GetID()
-
-// add team membership
-	//     member - a normal member of the team
-    //     maintainer - a team maintainer. Able to add/remove other team
-    //                  members, promote other team members to team
-    //                  maintainer, and edit the team’s name and description
-    //
-    // Default value is "member".
-	_, _, err := client.Organizations.AddTeamMembership(ctx, teamFromTeamYaml.Id, userFromTeamYaml, nil)
-
-	if err != nil {
-		fmt.Printf("error: %v", err)
-	}
-
-// remove team membership
-
-// add team to repo
-	opts := &github.OrganizationAddTeamRepoOptions{}
-	opts.Permission = "pull"
-
-	_, err = client.Organizations.AddTeamRepo(ctx, githubRepoTeam.GetID(), *orgPtr, repoFromYaml.RepoName, opts)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-// remove team from repo
-
-// remove user from Org
-
-*/
